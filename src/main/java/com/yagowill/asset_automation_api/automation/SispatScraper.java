@@ -54,33 +54,37 @@ public class SispatScraper {
                     List<AssetItemDTO> itemsOfThisDescription = entry.getValue();
 
                     System.out.println("Filtering by description: " + currentDescription);
-
-
-
                     performFilter(page, originAgency, currentDescription, termNumber);
-
 
                     for (AssetItemDTO item : itemsOfThisDescription) {
                         System.out.println("Processing RP: " + item.getRpNumber());
 
                         try {
-                            // TODO AÇÃO: INCORPORAR O RP ESPECÍFICO
-                            // page.click("botao_selecionar_primeiro_item");
-                            // page.fill("input_rp", item.getRpNumber());
-                            // page.click("botao_confirmar");
-                            // page.waitForSelector("mensagem_sucesso");
+                            assertThat(page.locator("td[id*=\"incorporar_bem_destinado_ao_orgao_form_lista:patrimonios:0:j_id446\"]")).hasText(currentDescription);
+                            page.click("//a[@id=\"incorporar_bem_destinado_ao_orgao_form_lista:patrimonios:0:incorporarbens\"]");
+                            page.locator("//input[@id=\"incorporar_bem_destinado_ao_orgao_form_cad:rpInicial\"]").fill(item.getRpNumber());
+                            page.getByTitle("Localizar Unidade de Localização de Destino").click();
+                            page.locator("//*[@id=\"modal_searchUnidadeDestino_unidade_search_form\"]/table[2]/tbody/tr/td[1]/table/tbody/tr[1]/td[2]/input").fill(destinationUnit);
+                            page.locator("//*[@id=\"modal_searchUnidadeDestino_unidade_search_form:j_id778\"]").click();
+                            page.locator("//*[@id=\"modal_searchUnidadeDestino_unidade_search_form:unidadesearchUnidadeDestino:0:confirmacaoorigem\"]").click();
+                            page.pause();
+                            //page.locator("//input[@id=\"incorporar_bem_destinado_ao_orgao_form_cad:Incorporar\"]").click();
+                            page.locator("input[id*=\"incorporar_bem_destinado_ao_orgao_form_lista:cancelaimpressao\"]").click();
                             // saveHistory(item.getRpNumber(), currentDescription, "SUCCESS", "Incorporated successfully.");
 
                         } catch (PlaywrightException e) {
-                            System.err.println("Failed to process RP " + item.getRpNumber() + ": " + e.getMessage());
+                            String errorMessage = page.locator("div.erros > table > tbody > tr > td > span").innerText();
+                            System.err.println("Failed to process RP " + item.getRpNumber() + ": " + errorMessage + ": " + e.getMessage());
                             // saveHistory(item.getRpNumber(), currentDescription, "ERROR", e.getMessage());
+                            page.locator("input[value=\"Cancelar\"]").click();
+                            performFilter(page, originAgency, currentDescription, termNumber);
 
                         }
                     }
                 }
 
             } catch (Exception e) {
-                System.err.println("Critical error navigating SispatWeb: " + e.getMessage());
+                System.out.println(e.getMessage());
             } finally {
                 context.close();
                 browser.close();
@@ -98,10 +102,11 @@ public class SispatScraper {
     }
     private void performFilter(Page page, String originAgency, String description, String termNumber) {
          page.locator("tr > td:nth-child(2) > select").selectOption(originAgency);
-         page.locator("css=input#incorporar_bem_destinado_ao_orgao_form_pesq:descricaobem").fill(termNumber);
-         page.locator("css=input#incorporar_bem_destinado_ao_orgao_form_pesq:descricaomaterial").fill(description);
+
+         page.locator("//input[@id=\"incorporar_bem_destinado_ao_orgao_form_pesq:descricaobem\"]").fill(termNumber);
+         page.locator("//*[@id=\"incorporar_bem_destinado_ao_orgao_form_pesq:descricaomaterial\"]").fill(description);
          page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName(Pattern.compile("pesquisar", Pattern.CASE_INSENSITIVE))).click();
-         assertThat(page.locator("#incorporar_bem_destinado_ao_orgao_form_lista:patrimonios")).isVisible();
+         assertThat(page.locator("//table[@id=\"incorporar_bem_destinado_ao_orgao_form_lista:patrimonios\"]")).isVisible();
     }
 
     private void saveHistory(String rpNumber, String description, String status, String logMessage) {
