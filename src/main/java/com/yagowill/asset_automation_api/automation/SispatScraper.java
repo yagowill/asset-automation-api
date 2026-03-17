@@ -1,19 +1,18 @@
 package com.yagowill.asset_automation_api.automation;
 
 import com.microsoft.playwright.*;
-import com.microsoft.playwright.options.AriaRole;
-import com.microsoft.playwright.options.LoadState;
+import com.yagowill.asset_automation_api.automation.pages.DashboardPage;
+import com.yagowill.asset_automation_api.automation.pages.IncorporationPage;
+import com.yagowill.asset_automation_api.automation.pages.LoginPage;
 import com.yagowill.asset_automation_api.dto.AssetItemDTO;
 import com.yagowill.asset_automation_api.model.Asset;
 import com.yagowill.asset_automation_api.repository.AssetRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import static com.microsoft.playwright.assertions.PlaywrightAssertions.assertThat;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 @Component
 public class SispatScraper {
@@ -40,45 +39,36 @@ public class SispatScraper {
             Page page = context.newPage();
 
             try {
-                performLogin(page);
+                LoginPage loginPage = new LoginPage(page);
+                loginPage.login(username, password);
 
-                page.navigate("https://www.sistemas.pa.gov.br/sispat");
-                assertThat(page).hasTitle("Sispat  | Principal");
-                Locator linkIncorporationPage = page.locator("a.item_pendencia_descricao").first();
-                assertThat(linkIncorporationPage).hasText("Entrada por Transferência Não Incorporado");
-                linkIncorporationPage.click();
+                DashboardPage dashboardPage = new DashboardPage(page);
+                dashboardPage.navigateTo();
+                dashboardPage.goToIncorporationPage();
 
+                IncorporationPage incorporationPage = new IncorporationPage(page);
 
                 for (Map.Entry<String, List<AssetItemDTO>> entry : groupedItems.entrySet()) {
                     String currentDescription = entry.getKey();
                     List<AssetItemDTO> itemsOfThisDescription = entry.getValue();
 
                     System.out.println("Filtering by description: " + currentDescription);
-                    performFilter(page, originAgency, currentDescription, termNumber);
+                    incorporationPage.filterAssets(originAgency, currentDescription, termNumber);
 
                     for (AssetItemDTO item : itemsOfThisDescription) {
                         System.out.println("Processing RP: " + item.getRpNumber());
 
                         try {
-                            assertThat(page.locator("td[id*=\"incorporar_bem_destinado_ao_orgao_form_lista:patrimonios:0:j_id446\"]")).hasText(currentDescription);
-                            page.click("//a[@id=\"incorporar_bem_destinado_ao_orgao_form_lista:patrimonios:0:incorporarbens\"]");
-                            page.locator("//input[@id=\"incorporar_bem_destinado_ao_orgao_form_cad:rpInicial\"]").fill(item.getRpNumber());
-                            page.getByTitle("Localizar Unidade de Localização de Destino").click();
-                            page.locator("//*[@id=\"modal_searchUnidadeDestino_unidade_search_form\"]/table[2]/tbody/tr/td[1]/table/tbody/tr[1]/td[2]/input").fill(destinationUnit);
-                            page.locator("//*[@id=\"modal_searchUnidadeDestino_unidade_search_form:j_id778\"]").click();
-                            page.locator("//*[@id=\"modal_searchUnidadeDestino_unidade_search_form:unidadesearchUnidadeDestino:0:confirmacaoorigem\"]").click();
-                            page.pause();
-                            //page.locator("//input[@id=\"incorporar_bem_destinado_ao_orgao_form_cad:Incorporar\"]").click();
-                            page.locator("input[id*=\"incorporar_bem_destinado_ao_orgao_form_lista:cancelaimpressao\"]").click();
+                            incorporationPage.assertItemDescription(currentDescription);
+                            incorporationPage.incorporateItem(item.getRpNumber(), destinationUnit);
                             // saveHistory(item.getRpNumber(), currentDescription, "SUCCESS", "Incorporated successfully.");
 
                         } catch (PlaywrightException e) {
-                            String errorMessage = page.locator("div.erros > table > tbody > tr > td > span").innerText();
+                            String errorMessage = incorporationPage.getErrorMessage();
                             System.err.println("Failed to process RP " + item.getRpNumber() + ": " + errorMessage + ": " + e.getMessage());
                             // saveHistory(item.getRpNumber(), currentDescription, "ERROR", e.getMessage());
-                            page.locator("input[value=\"Cancelar\"]").click();
-                            performFilter(page, originAgency, currentDescription, termNumber);
-
+                            incorporationPage.cancelIncorporation();
+                            incorporationPage.filterAssets(originAgency, currentDescription, termNumber);
                         }
                     }
                 }
@@ -90,23 +80,6 @@ public class SispatScraper {
                 browser.close();
             }
         }
-    }
-
-    private void performLogin(Page page) {
-        System.out.println("Logging into sistemas.pa.gov.br...");
-        page.navigate("https://www.sistemas.pa.gov.br/governodigital/public/main/index.xhtml");
-        page.getByPlaceholder("Usuário").fill(username);
-        page.getByPlaceholder("Senha").fill(password);
-        page.getByTitle("Entrar").click();
-        page.waitForLoadState(LoadState.DOMCONTENTLOADED);
-    }
-    private void performFilter(Page page, String originAgency, String description, String termNumber) {
-         page.locator("tr > td:nth-child(2) > select").selectOption(originAgency);
-
-         page.locator("//input[@id=\"incorporar_bem_destinado_ao_orgao_form_pesq:descricaobem\"]").fill(termNumber);
-         page.locator("//*[@id=\"incorporar_bem_destinado_ao_orgao_form_pesq:descricaomaterial\"]").fill(description);
-         page.getByRole(AriaRole.BUTTON, new Page.GetByRoleOptions().setName(Pattern.compile("pesquisar", Pattern.CASE_INSENSITIVE))).click();
-         assertThat(page.locator("//table[@id=\"incorporar_bem_destinado_ao_orgao_form_lista:patrimonios\"]")).isVisible();
     }
 
     private void saveHistory(String rpNumber, String description, String status, String logMessage) {
